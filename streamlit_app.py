@@ -12,8 +12,6 @@ import pdfplumber
 from langchain.document_loaders import PyMuPDFLoader
 import base64
 import fitz
-os.environ["OPENAI_API_KEY"] = "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"
-
 
 st.set_page_config(layout="wide", page_title="Voronoi. Label Studio")
 
