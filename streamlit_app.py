@@ -1,3 +1,5 @@
+## update 2025-02-11
+
 import streamlit as st
 from rembg import remove
 from PIL import Image
@@ -12,6 +14,8 @@ import pdfplumber
 from langchain.document_loaders import PyMuPDFLoader
 import base64
 import fitz
+
+
 
 st.set_page_config(layout="wide", page_title="Voronoi. Label Studio")
 
