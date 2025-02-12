@@ -13,6 +13,7 @@ import pdfplumber
 from langchain.document_loaders import PyMuPDFLoader
 import base64
 import fitz
+
 os.environ["OPENAI_API_KEY"] = "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"
 
 st.set_page_config(layout="wide", page_title="Voronoi. Label Studio")
@@ -22,13 +23,11 @@ st.markdown("Please upload your files (the **full paper** and **table images**) 
 left, middle, right = st.columns(3)
 st.sidebar.write("## Upload Your Files :gear:")
 
-# MAX_FILE_SIZE = 5 * 1024 * 1024  # 원래 기본은 최대 200MB 업로드 허용
-
 col1, col2 = st.columns([1, 1])
 paper_pdf_upload = st.sidebar.file_uploader("Full Paper PDF format", type=["PDF"]) # 1개까지 허용
 paper_efficacy_upload = st.sidebar.file_uploader("Efficacy Table PNG format", type=["PNG"], accept_multiple_files=True) # 3개까지 허용
-paper_toxicity_upload = st.sidebar.file_uploader("Toxicity Table PNG format", type=["PNG"]) # 3개까지 허용
-paper_dose_upload = st.sidebar.file_uploader("Dose info Table PNG format", type=["PNG"]) # 3개까지 허용
+paper_toxicity_upload = st.sidebar.file_uploader("Toxicity Table PNG format", type=["PNG"], accept_multiple_files=True) # 3개까지 허용
+paper_dose_upload = st.sidebar.file_uploader("Dose info Table PNG format", type=["PNG"], accept_multiple_files=True) # 3개까지 허용
 
 def check_column_headers(df1, df2):
     return list(df1.columns) == list(df2.columns)
@@ -36,21 +35,10 @@ def check_column_headers(df1, df2):
 def encode_image(image_bytes):
     return base64.b64encode(image_bytes).decode('utf-8')
 
-def pdf_to_text(upload):
-
-    #################################### related text data 뽑기 ####################################
-
-    print("EFFICACY Table Generating...")
-    print("\n\n[[[논문에서 초록과 EFFICACY 본문]]]\n")
-
+def eff_pdf_to_text(upload):
     if upload is not None:
-            # `upload`는 UploadedFile 객체이므로, 파일을 메모리에서 바로 읽어 처리합니다.
             file_bytes = upload.read()
-            
-            # PyMuPDFLoader가 파일 경로를 기대하므로, BytesIO 객체로 파일을 전달
             pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
-        
-            # 모든 페이지의 텍스트 추출
             full_text = ""
             for page_num in range(pdf_document.page_count):
                 page = pdf_document.load_page(page_num)
@@ -77,7 +65,6 @@ def pdf_to_text(upload):
             return related_text_input
 
 def efficacy_table_image(upload):
-    
     if upload:
         base64_image = encode_image(upload.read())
         client = OpenAI()
@@ -204,11 +191,280 @@ def efficacy_add_table(eff_table1, eff_table2):
         efficacy_output = None
         return None
 
-# def show_original_image(upload):
-#     image = Image.open(upload)
-#     width, height = image.size
-#     col1.write("Original Image :camera:")
-#     col1.image(image)
+
+def tox_pdf_to_text(upload):
+
+    if upload is not None:
+            file_bytes = upload.read()
+            pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
+            full_text = ""
+            for page_num in range(pdf_document.page_count):
+                page = pdf_document.load_page(page_num)
+                full_text += page.get_text()
+
+            client = OpenAI()
+            response_text = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"제공한 텍스트 자료에서 Abstract 문단 내용과 dverse Events(or toxicity) 대해 설명하고 있는 모든 문단들을 가져와서 출력해줘. 텍스트 자료:{full_text}.",
+                            },
+                        ],
+                    }
+                ],
+            )
+
+            related_text_input = response_text.choices[0].message.content
+            print("최종 사용할 논문 본문 내용:\n", related_text_input)
+            return related_text_input
+
+def tox_table_image(upload):
+    if upload:
+        base64_image = encode_image(upload.read())
+        client = OpenAI()
+        response_replic = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": """
+
+                            **해야하는 일 **
+                            제공된 이미지에 있는 표를 텍스트 표로 바꿔서 csv format으로 반환해줘.
+                            추가 설명은 주지 말고 CSV 포멧 표만 반환해.
+                            이때, 표에 함께 있는 caption 글을 csv format 맨 밑에 행에 함께 반환해줘.
+
+                            **고려할 것**
+                            행/열을 잘 구분하고, 이때 **띄어쓰기나 볼드체 등의 특징**을 보고, **상위 개념 하위 개념** 관계를 모두 파악하여 상위항목(예를 들어 treat group name or 약물 복용 mg)-하위항목(grade 몇 번째인지)으로 **합쳐서 행**으로 만들어줘.
+
+                            """,
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                        },
+                    ],
+                }
+            ],
+        )
+
+        # print(response_middle.choices[0])
+        response_replic = response_replic.choices[0].message.content
+        #print('\n\n[STEP 2] 이미지에서 표 복제 text content:\n',response_replic)
+
+        rows111 = response_replic.split("\n")
+        data111 = [row.split(",") for row in rows111]
+        df111 = pd.DataFrame(data111)
+        df111 = df111.applymap(lambda x: x.replace('"', '') if isinstance(x, str) else x)
+        #print("\n df111: ",df111)
+
+        related_table_input = df111.to_csv(index=False)
+        print("\n df_csv:",related_table_input)
+    else:
+            related_table_input = None
+    return related_table_input
+
+def tox_table(related_table_input, related_text_input):
+    client = OpenAI()
+    response_our_excel = client.chat.completions.create(
+      model="gpt-4o",
+      messages=[
+          {
+              "role": "user",
+              "content": f"""
+                I want to extract table data from the given csv format data and populate my dataframe with the required details.
+                My DataFrame columns are: columns = ["treat group", "total no. patients", "adverse event", "AE Type", "grade group", "patient (#)", "patient (%)", "dose reduction (%)", "dose discontinuation (%)", "dose interruption"]
+                The table contains information about drug adverse events, including their grades, patient numbers, and percentages.
+                Please organize the data such that every adverse event and every grade listed in the table is included in the output.
+                No subgroup or category should be omitted.
+                Data provided: {related_table_input}
+
+                Also, make sure to utilize the provided text data. If no tables are recognized, you can rely on the text data instead.
+                Especially, when you are working on the column of 'AE type', if the caption says 'drug-related', just write TRAE. If the adverse event occurs during treatment, write TRAE; if it is not related to the drug, write TEAE; if there is no information, write Unknown.
+                Text data: {related_text_input}
+
+                ## Instructions:
+                1. Ensure every adverse event (e.g., diarrhea, rash, etc.) and every grade (e.g., G1, G2, All, etc.) is included in the output.
+                2. If any data is missing for a column, explicitly write None.
+                3. Maintain the exact formatting of symbols, parentheses, and numbers as shown in the original table.
+                4. Return a well-structured table in CSV format, with all values accurately placed in their corresponding columns.
+                5. Do not include any descriptions, explanations, or additional text in the output, only the table content.
+                   하지만 한 가지 예외 사항이 있어. 만약, 텍스트 데이터를 사용한다면, 어떤 칸을 채우기 위해 텍스트 어느 부분을 사용했는지 알려줘.
+                6. "total no. patients" 열의 내용을 쓸 때에는 수치만 적어. 예를 들어 "N=30" 이렇게 적지 말고, 30이라고 적어.
+                Make sure the output table includes all subgroups and covers the entirety of the data provided without missing any details.
+                """
+          }
+      ]
+  )
+    #print(response_our_excel)
+    response_our_excel_data = response_our_excel.choices[0].message.content
+
+    rows111 = response_our_excel_data.split("\n")
+    data111 = [row.split(",") for row in rows111]
+    df111 = pd.DataFrame(data111)
+    df111 = df111.applymap(lambda x: x.replace('"', '') if isinstance(x, str) else x)
+
+    header_idx = df111[df111[0] == 'treat group'].index[0]
+    df111.columns = df111.iloc[header_idx].values
+    df_cleaned = df111.iloc[header_idx + 1:].reset_index(drop=True)
+    end_idx = df_cleaned[df_cleaned.iloc[:, 0].str.contains('```', na=False)].index[0]
+    tox_output = df_cleaned.iloc[:end_idx].reset_index(drop=True)
+
+    print("Tox Ouput:")
+    print(tox_output)
+
+    return tox_output
+
+
+def dose_pdf_to_text(upload):
+
+    if upload is not None:
+            file_bytes = upload.read()
+            pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
+            full_text = ""
+            for page_num in range(pdf_document.page_count):
+                page = pdf_document.load_page(page_num)
+                full_text += page.get_text()
+
+            client = OpenAI()
+            response_text = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"제공한 텍스트 자료에서 Abstract 문단 내용과 Dose expansion(Dose Interruption, Dose Reduction, Dose Discontinuation)에 대해 설명하고 있는 모든 문단들을 가져와서 출력해줘. 텍스트 자료:{full_text}.",
+                            },
+                        ],
+                    }
+                ],
+            )
+
+            related_text_input = response_text.choices[0].message.content
+            print("최종 사용할 논문 본문 내용:\n", related_text_input)
+            return related_text_input
+
+def dose_table_image(upload):
+    if upload:
+        base64_image = encode_image(upload.read())
+        client = OpenAI()
+        response_replic = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": """
+
+                        **해야하는 일 **
+                        제공된 이미지에 있는 표를 텍스트 표로 바꿔서 csv format으로 반환해줘.
+                        추가 설명은 주지 말고 CSV 포멧 표만 반환해.
+                        이때, 표에 함께 있는 caption 글을 csv format 맨 밑에 행에 함께 반환해줘.
+
+                        **고려할 것**
+                        주로 복용 정보 혹은 total 정보가 treat_group에 들어갈 거고, Dose reduction, Dose discontinuation, Dose interruption의 내용 위주로 채우면 돼.
+                        이때, dose escalation 정보와 dose expansion 정보가 같이 있을 수도 있어. 나는 dose expansion에 대한 정보만 필요하니까 그것만 가져와.
+                        "dose reduction (%)", "dose discontinuation (%)", "dose interruption"의 경우 %의 단위에 해당하는 수치만 적어. 예를 들어, 30% => 30, 15(30%) -> 30
+                        행/열을 잘 구분하고, 이때 필요하다면 **띄어쓰기나 볼드체 등의 특징**을 보고, **상위 개념 하위 개념** 관계를 모두 파악하여 상위항목-하위항목으로 **합쳐서 행**으로 만들어줘.
+                        """,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
+            }
+        ],
+    )
+
+        # print(response_middle.choices[0])
+        response_replic = response_replic.choices[0].message.content
+        #print('\n\n[STEP 2] 이미지에서 표 복제 text content:\n',response_replic)
+
+        rows111 = response_replic.split("\n")
+        data111 = [row.split(",") for row in rows111]
+        df111 = pd.DataFrame(data111)
+        df111 = df111.applymap(lambda x: x.replace('"', '') if isinstance(x, str) else x)
+        #print("\n df111: ",df111)
+
+        related_table_input = df111.to_csv(index=False)
+        print("\n df_csv:",related_table_input)
+    else:
+            related_table_input = None
+    return related_table_input
+
+def dose_table(related_table_input, related_text_input):
+    client = OpenAI()
+    response_our_excel = client.chat.completions.create(
+      model="gpt-4o",
+      messages=[
+          {
+              "role": "user",
+              "content": f"""
+                I want to extract table data from the given csv format data and populate my dataframe with the required details.
+                My DataFrame columns are: columns = ["treat group", "total no. patients", "adverse event", "AE Type", "grade group", "patient (#)", "patient (%)", "dose reduction (%)", "dose discontinuation (%)", "dose interruption"]
+                여기서  "dose reduction (%)", "dose discontinuation (%)", "dose interruption" 정보에 대해 테이블을 보고 기입하면 돼.
+
+                Data provided: {related_table_input}
+
+                Also, make sure to utilize the provided text data. If no tables are recognized, you can rely on the text data instead.
+                Especially, when you are working on the column of 'AE type', if the caption says 'drug-related', just write TRAE. If the adverse event occurs during treatment, write TRAE; if it is not related to the drug, write TEAE; if there is no information, write Unknown.
+                Text data: {related_text_input}
+
+                ## Instructions:
+                1. If any data is missing for a column, explicitly write None.
+                2. Maintain the exact formatting of symbols, parentheses, and numbers as shown in the original table.
+                3. Return a well-structured table in CSV format, with all values accurately placed in their corresponding columns.
+                4. Do not include any descriptions, explanations, or additional text in the output, only the table content.
+                Make sure the output table includes all subgroups and covers the entirety of the data provided without missing any details.
+                """
+          }
+      ]
+  )
+
+    # prompt에 5-2) 나중에 후처리 때 처리해줘야함. 중간 csv만 빼오기.
+
+    print(response_our_excel)
+    response_our_excel_data = response_our_excel.choices[0].message.content
+
+    rows111 = response_our_excel_data.split("\n")
+    data111 = [row.split(",") for row in rows111]
+    df111 = pd.DataFrame(data111)
+    df111 = df111.applymap(lambda x: x.replace('"', '') if isinstance(x, str) else x)
+
+    header_idx = df111[df111[0] == 'treat group'].index[0]
+    df111.columns = df111.iloc[header_idx].values
+    df_cleaned = df111.iloc[header_idx + 1:].reset_index(drop=True)
+    end_idx = df_cleaned[df_cleaned.iloc[:, 0].str.contains('```', na=False)].index[0]
+    dose_output = df_cleaned.iloc[:end_idx].reset_index(drop=True)
+    print(dose_output)
+
+    return dose_output
+
+def tox_add_table(tox_table1=None, tox_table2=None, dose_table1=None):
+    if tox_table1 is not None and tox_table2 is not None and dose_table1 is None: 
+        if check_column_headers(tox_table1, tox_table2):
+            tox_output = pd.concat([tox_table1, tox_table2], axis=0, ignore_index=True)
+            return tox_output
+
+    elif tox_table1 is not None and tox_table2 is not None and dose_table1 is not None: 
+        if check_column_headers(tox_table1, tox_table2):
+            tox_output = pd.concat([tox_table1, tox_table2, dose_table1], axis=0, ignore_index=True)
+            return tox_output
+    else:
+        tox_output = None
+        return None
 
 def show_original_image(upload_list):
     if 'image_index' not in st.session_state:
@@ -218,7 +474,7 @@ def show_original_image(upload_list):
         current_image_file = upload_list[st.session_state.image_index]
         current_image = Image.open(current_image_file)
 
-        col2.write("Original Table :camera:")
+        col1.write("Original Table :camera:")
         col1.image(current_image, caption=f"Image {st.session_state.image_index + 1} of {len(upload_list)}")
 
         prev_button = st.button("Previous")
@@ -234,32 +490,31 @@ def show_original_image(upload_list):
     elif len(upload_list) == 1:
         current_image_file = upload_list[st.session_state.image_index]
         current_image = Image.open(current_image_file)
+        col1.write("Original Table :camera:")
         col1.image(current_image)
-
-# if paper_efficacy_upload:
-#     st.session_state.paper_efficacy_upload = paper_efficacy_upload  
-#     show_original_image(paper_efficacy_upload)
 
 def show_generated_table(upload):
     # edited_df = st.data_editor(upload, use_container_width=True)
     col2.write("Suggested Table :wrench:")
     col2.data_editor(upload, use_container_width=True, height=1000)
+    
 
 if left.button("Efficacy Run", use_container_width=True):
 
     status_placeholder_left = left.empty()
-    if paper_pdf_upload is None and paper_efficacy_upload is None:
+    if paper_pdf_upload is None and len(paper_efficacy_upload) == 0:
         status_placeholder_left.markdown("Please upload your files!")
 
     else:
+
         status_placeholder_left.markdown("Reading the paper...")
         if paper_pdf_upload is not None:  
-            related_text_input = pdf_to_text(upload=paper_pdf_upload)
+            related_text_input = eff_pdf_to_text(upload=paper_pdf_upload)
         else:
             related_text_input = None
 
         if len(paper_efficacy_upload) >= 2:
-            status_placeholder_left.markdown("Recognizing the table in the image...")
+            status_placeholder_left.markdown("Recognizing the table in the image...Efficacy Table 2개일 때")
             
             related_table_input1 = efficacy_table_image(upload=paper_efficacy_upload[0])
             related_table_input2 = efficacy_table_image(upload=paper_efficacy_upload[1])
@@ -274,10 +529,9 @@ if left.button("Efficacy Run", use_container_width=True):
             status_placeholder_left = left.empty()
         
         elif len(paper_efficacy_upload) == 1:
-            status_placeholder_left.markdown("Recognizing the table in the image...")
+            status_placeholder_left.markdown("Recognizing the table in the image...Efficacy Table 1개일 때")
 
             related_table_input = efficacy_table_image(upload=paper_efficacy_upload[0])
-
             show_original_image(paper_efficacy_upload)
 
             status_placeholder_left.markdown("Organizing the table...")
@@ -293,14 +547,112 @@ if left.button("Efficacy Run", use_container_width=True):
             # related_table_input = efficacy_table_image(upload=paper_efficacy_upload[0])
 
             status_placeholder_left.markdown("Organizing the table...")
-            efficacy_table_output = efficacy_table(related_text_input)
+            efficacy_table_output = efficacy_table(None, related_text_input)
 
             show_generated_table(efficacy_table_output)
             status_placeholder_left = left.empty()
-
-
-# if middle.button("Toxicity Run", use_container_width=True):
+  
+if middle.button("Toxicity Run", use_container_width=True):
     
+    status_placeholder_middle = middle.empty()
+    if paper_pdf_upload is None and len(paper_toxicity_upload) == 0 and len(paper_dose_upload) == 0 :
+        status_placeholder_middle.markdown("Please upload your files!")
 
-# if right.button("Save", use_container_width=True):
+    else:
+        status_placeholder_middle.markdown("Reading the paper...")
+        if paper_pdf_upload is not None:  
+            related_text_input = eff_pdf_to_text(upload=paper_pdf_upload)
+        else:
+            related_text_input = None
     
+        # 조건 1: paper_toxicity_upload가 2개이고, paper_dose_upload가 없을 때
+        if len(paper_toxicity_upload) == 2 and len(paper_dose_upload) == 0:
+            status_placeholder_middle.markdown("Recognizing the tables in the image...Tox Table 2개, Dose Table가 없을 때")
+            
+            # 첫 번째와 두 번째 toxicity 테이블 이미지 인식
+            related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
+            related_table_input2 = tox_table_image(upload=paper_toxicity_upload[1])
+            show_original_image(paper_toxicity_upload)
+
+            status_placeholder_middle.markdown("Organizing the table...")
+            tox_table_output1 = tox_table(related_table_input1, related_text_input)
+            tox_table_output2 = tox_table(related_table_input2, related_text_input)
+            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2)
+
+            show_generated_table(tox_table_out)
+            status_placeholder_middle = middle.empty()
+
+        # 조건 2: paper_toxicity_upload가 1개이고, paper_dose_upload가 없을 때
+        elif len(paper_toxicity_upload) == 1 and len(paper_dose_upload) == 0:
+            status_placeholder_middle.markdown("Recognizing the table in the image...Tox Table 1개, Dose Table가 없을 때")
+
+            related_table_input = tox_table_image(upload=paper_toxicity_upload[0])
+            show_original_image(paper_toxicity_upload)
+
+            status_placeholder_middle.markdown("Organizing the table...")
+            tox_table_out = tox_table(related_table_input, related_text_input)
+
+            show_generated_table(tox_table_out)
+            status_placeholder_middle = middle.empty()
+
+        # 조건 3: paper_toxicity_upload가 없고, paper_dose_upload가 있을 때
+        elif len(paper_toxicity_upload) == 0 and len(paper_dose_upload) == 1:
+            status_placeholder_middle.markdown("Recognizing the table in the image...Tox Table 0개, Dose Table가 있을 때")
+            
+            related_table_input = dose_table_image(upload=paper_dose_upload[0])
+            show_original_image(paper_dose_upload)
+
+            status_placeholder_middle.markdown("Organizing the table...")
+            tox_table_out = dose_table(related_table_input, related_text_input)
+
+            show_generated_table(tox_table_out)
+            status_placeholder_middle = middle.empty()
+
+        # 조건 4: paper_toxicity_upload가 1개이고, paper_dose_upload가 있을 때
+        elif len(paper_toxicity_upload) == 1 and len(paper_dose_upload) == 1:
+            status_placeholder_middle.markdown("Recognizing the tables in the image...Tox Table 1개, Dose Table가 있을 때")
+            
+            # toxicity 테이블 이미지와 dose 테이블 이미지 인식
+            related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
+            related_table_input2 = dose_table_image(upload=paper_dose_upload[0])
+            show_original_image(paper_toxicity_upload)
+
+            status_placeholder_middle.markdown("Organizing the table...")
+            tox_table_output1 = tox_table(related_table_input1, related_text_input)
+            tox_table_output2 = dose_table(related_table_input2, related_text_input)
+            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2)
+
+            show_generated_table(tox_table_out)
+            status_placeholder_middle = middle.empty()
+
+        # 조건 5: paper_toxicity_upload가 2개이고, paper_dose_upload가 있을 때
+        elif len(paper_toxicity_upload) == 2 and len(paper_dose_upload) == 1:
+            status_placeholder_middle.markdown("Recognizing the tables in the image...Tox Table 2개, Dose Table가 있을 때")
+            
+            # toxicity 테이블 2개와 dose 테이블 인식
+            related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
+            related_table_input2 = tox_table_image(upload=paper_toxicity_upload[1])
+            related_table_input3 = dose_table_image(upload=paper_dose_upload[0])
+            show_original_image(paper_toxicity_upload)
+
+            status_placeholder_middle.markdown("Organizing the table...")
+            tox_table_output1 = tox_table(related_table_input1, related_text_input)
+            tox_table_output2 = tox_table(related_table_input2, related_text_input)
+            tox_table_output3 = dose_table(related_table_input3, related_text_input)
+            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2, tox_table_output3)
+
+            show_generated_table(tox_table_out)
+            status_placeholder_middle = middle.empty()
+
+        # 그 외 다른 조건 (만약 조건에 맞지 않으면 여기로 들어옴)
+        else:
+            status_placeholder_middle.markdown("Efficacy Table 이미지가 업로드되지 않았습니다. 우측의 출력 테이블은 오직 논문의 본문 내용에만 의존하여 생성됩니다.")
+            tox_table_output1 = tox_table(None, related_text_input)
+            show_generated_table(tox_table_output1)
+            status_placeholder_middle = middle.empty()
+
+
+
+if right.button("Save", use_container_width=True):
+    
+    status_placeholder_right = right.empty()
