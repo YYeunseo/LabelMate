@@ -1,7 +1,7 @@
-#02/13 update
+# 02/13 (2) update
+# 기존 코드에서 수정 가능하도록 바꾼 코드
 
 import streamlit as st
-from rembg import remove
 from PIL import Image
 from io import BytesIO
 from PIL import Image
@@ -12,9 +12,11 @@ from openai import OpenAI
 import pandas as pd
 from io import StringIO
 import pdfplumber
-from langchain.document_loaders import PyMuPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 import base64
 import fitz
+
+os.environ["OPENAI_API_KEY"] = "api key"
 
 st.set_page_config(layout="wide", page_title="Voronoi. Label Studio")
 
@@ -34,6 +36,7 @@ def check_column_headers(df1, df2):
 
 def encode_image(image_bytes):
     return base64.b64encode(image_bytes).decode('utf-8')
+
 
 def eff_pdf_to_text(upload):
     if upload is not None:
@@ -466,38 +469,12 @@ def tox_add_table(tox_table1=None, tox_table2=None, dose_table1=None):
         tox_output = None
         return None
 
-def show_original_image(upload_list):
-    if 'image_index' not in st.session_state:
-        st.session_state.image_index = 0  
-    
-    if len(upload_list) >= 2:
-        current_image_file = upload_list[st.session_state.image_index]
-        current_image = Image.open(current_image_file)
 
-        col1.write("Original Table :camera:")
-        col1.image(current_image, caption=f"Image {st.session_state.image_index + 1} of {len(upload_list)}")
 
-        prev_button = st.button("Previous")
-        if prev_button:
-            if 'image_index' in st.session_state and st.session_state.image_index > 0:
-                    st.session_state.image_index -= 1
 
-        next_button = st.button("Next")
-        if next_button:
-            if 'image_index' in st.session_state and st.session_state.image_index < len(upload_list) - 1:
-                st.session_state.image_index += 1
-    
-    elif len(upload_list) == 1:
-        current_image_file = upload_list[st.session_state.image_index]
-        current_image = Image.open(current_image_file)
-        col1.write("Original Table :camera:")
-        col1.image(current_image)
-
-def show_generated_table(upload):
-    # edited_df = st.data_editor(upload, use_container_width=True)
-    col2.write("Suggested Table :wrench:")
-    col2.data_editor(upload, use_container_width=True, height=1000)
-    
+## display setting... 
+diaplay_efficacy_excel_name = "./efficacy_excel.xlsx"
+diaplay_toxicity_excel_name = "./toxicity_excel.xlsx"
 
 if left.button("Efficacy Run", use_container_width=True):
 
@@ -506,7 +483,6 @@ if left.button("Efficacy Run", use_container_width=True):
         status_placeholder_left.markdown("Please upload your files!")
 
     else:
-
         status_placeholder_left.markdown("Reading the paper...")
         if paper_pdf_upload is not None:  
             related_text_input = eff_pdf_to_text(upload=paper_pdf_upload)
@@ -518,38 +494,37 @@ if left.button("Efficacy Run", use_container_width=True):
             
             related_table_input1 = efficacy_table_image(upload=paper_efficacy_upload[0])
             related_table_input2 = efficacy_table_image(upload=paper_efficacy_upload[1])
-            show_original_image(paper_efficacy_upload)
 
             status_placeholder_left.markdown("Organizing the table...")
             efficacy_table_output1 = efficacy_table(related_table_input1, related_text_input)
             efficacy_table_output2 = efficacy_table(related_table_input2, related_text_input)
-            efficacy_table_out = efficacy_add_table(efficacy_table_output1,efficacy_table_output2)
+            efficacy_table_output = efficacy_add_table(efficacy_table_output1,efficacy_table_output2)
+            
+            efficacy_table_output.to_excel(diaplay_efficacy_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_efficacy_excel_name}'")
 
-            show_generated_table(efficacy_table_out)
             status_placeholder_left = left.empty()
         
         elif len(paper_efficacy_upload) == 1:
             status_placeholder_left.markdown("Recognizing the table in the image...Efficacy Table 1개일 때")
-
             related_table_input = efficacy_table_image(upload=paper_efficacy_upload[0])
-            show_original_image(paper_efficacy_upload)
-
+    
             status_placeholder_left.markdown("Organizing the table...")
             efficacy_table_output = efficacy_table(related_table_input, related_text_input)
+            efficacy_table_output.to_excel(diaplay_efficacy_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_efficacy_excel_name}'")
 
-            show_generated_table(efficacy_table_output)
             status_placeholder_left = left.empty()
         
         else:
             status_placeholder_left.markdown("Efficacy Table 이미지가 업로드되지 않았습니다. 우측의 출력 테이블은 오직 논문의 본문 내용에만 의존하여 생성됩니다.")
             
-            # show_original_image(paper_efficacy_upload[0]) ##추후 여기에다가는 paper scroll하면서 볼 수 있게 만들어두거나 사용한 ref markdown 보여주기
-            # related_table_input = efficacy_table_image(upload=paper_efficacy_upload[0])
-
             status_placeholder_left.markdown("Organizing the table...")
             efficacy_table_output = efficacy_table(None, related_text_input)
+           
+            efficacy_table_output.to_excel(diaplay_efficacy_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_efficacy_excel_name}'")
 
-            show_generated_table(efficacy_table_output)
             status_placeholder_left = left.empty()
   
 if middle.button("Toxicity Run", use_container_width=True):
@@ -566,33 +541,34 @@ if middle.button("Toxicity Run", use_container_width=True):
             related_text_input = None
     
         # 조건 1: paper_toxicity_upload가 2개이고, paper_dose_upload가 없을 때
-        if len(paper_toxicity_upload) == 2 and len(paper_dose_upload) == 0:
+        if len(paper_toxicity_upload) >= 2 and len(paper_dose_upload) == 0:
             status_placeholder_middle.markdown("Recognizing the tables in the image...Tox Table 2개, Dose Table가 없을 때")
             
             # 첫 번째와 두 번째 toxicity 테이블 이미지 인식
             related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
             related_table_input2 = tox_table_image(upload=paper_toxicity_upload[1])
-            show_original_image(paper_toxicity_upload)
 
             status_placeholder_middle.markdown("Organizing the table...")
             tox_table_output1 = tox_table(related_table_input1, related_text_input)
             tox_table_output2 = tox_table(related_table_input2, related_text_input)
-            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2)
+            tox_table_output = tox_add_table(tox_table_output1, tox_table_output2)
 
-            show_generated_table(tox_table_out)
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
+
             status_placeholder_middle = middle.empty()
 
         # 조건 2: paper_toxicity_upload가 1개이고, paper_dose_upload가 없을 때
         elif len(paper_toxicity_upload) == 1 and len(paper_dose_upload) == 0:
             status_placeholder_middle.markdown("Recognizing the table in the image...Tox Table 1개, Dose Table가 없을 때")
-
             related_table_input = tox_table_image(upload=paper_toxicity_upload[0])
-            show_original_image(paper_toxicity_upload)
 
             status_placeholder_middle.markdown("Organizing the table...")
-            tox_table_out = tox_table(related_table_input, related_text_input)
+            tox_table_output = tox_table(related_table_input, related_text_input)
+                
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
 
-            show_generated_table(tox_table_out)
             status_placeholder_middle = middle.empty()
 
         # 조건 3: paper_toxicity_upload가 없고, paper_dose_upload가 있을 때
@@ -600,12 +576,12 @@ if middle.button("Toxicity Run", use_container_width=True):
             status_placeholder_middle.markdown("Recognizing the table in the image...Tox Table 0개, Dose Table가 있을 때")
             
             related_table_input = dose_table_image(upload=paper_dose_upload[0])
-            show_original_image(paper_dose_upload)
-
             status_placeholder_middle.markdown("Organizing the table...")
-            tox_table_out = dose_table(related_table_input, related_text_input)
+            tox_table_output = dose_table(related_table_input, related_text_input)
+            
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
 
-            show_generated_table(tox_table_out)
             status_placeholder_middle = middle.empty()
 
         # 조건 4: paper_toxicity_upload가 1개이고, paper_dose_upload가 있을 때
@@ -615,14 +591,15 @@ if middle.button("Toxicity Run", use_container_width=True):
             # toxicity 테이블 이미지와 dose 테이블 이미지 인식
             related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
             related_table_input2 = dose_table_image(upload=paper_dose_upload[0])
-            show_original_image(paper_toxicity_upload)
 
             status_placeholder_middle.markdown("Organizing the table...")
             tox_table_output1 = tox_table(related_table_input1, related_text_input)
             tox_table_output2 = dose_table(related_table_input2, related_text_input)
-            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2)
+            tox_table_output = tox_add_table(tox_table_output1, tox_table_output2)
+                        
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
 
-            show_generated_table(tox_table_out)
             status_placeholder_middle = middle.empty()
 
         # 조건 5: paper_toxicity_upload가 2개이고, paper_dose_upload가 있을 때
@@ -633,26 +610,101 @@ if middle.button("Toxicity Run", use_container_width=True):
             related_table_input1 = tox_table_image(upload=paper_toxicity_upload[0])
             related_table_input2 = tox_table_image(upload=paper_toxicity_upload[1])
             related_table_input3 = dose_table_image(upload=paper_dose_upload[0])
-            show_original_image(paper_toxicity_upload)
 
             status_placeholder_middle.markdown("Organizing the table...")
             tox_table_output1 = tox_table(related_table_input1, related_text_input)
             tox_table_output2 = tox_table(related_table_input2, related_text_input)
             tox_table_output3 = dose_table(related_table_input3, related_text_input)
-            tox_table_out = tox_add_table(tox_table_output1, tox_table_output2, tox_table_output3)
+            tox_table_output = tox_add_table(tox_table_output1, tox_table_output2, tox_table_output3)
+            
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
 
-            show_generated_table(tox_table_out)
             status_placeholder_middle = middle.empty()
 
         # 그 외 다른 조건 (만약 조건에 맞지 않으면 여기로 들어옴)
         else:
             status_placeholder_middle.markdown("Efficacy Table 이미지가 업로드되지 않았습니다. 우측의 출력 테이블은 오직 논문의 본문 내용에만 의존하여 생성됩니다.")
-            tox_table_output1 = tox_table(None, related_text_input)
-            show_generated_table(tox_table_output1)
+            tox_table_output = tox_table(None, related_text_input)
+            tox_table_output.to_excel(diaplay_toxicity_excel_name, index=False, engine='openpyxl')
+            print(f"DataFrame successfully saved to '{diaplay_toxicity_excel_name}'")
+            
             status_placeholder_middle = middle.empty()
-
 
 
 if right.button("Save", use_container_width=True):
     
     status_placeholder_right = right.empty()
+
+
+    
+### Real display ...
+if 'eff_image_index' not in st.session_state:
+    st.session_state.eff_image_index = 0
+
+if os.path.exists(diaplay_efficacy_excel_name):
+
+    if len(paper_efficacy_upload) >= 2:
+        current_image_file = paper_efficacy_upload[st.session_state.eff_image_index]
+        current_image = Image.open(current_image_file)
+
+        col1.write("Original Table :camera:")
+        col1.image(current_image, caption=f"Image {st.session_state.eff_image_index + 1} of {len(paper_efficacy_upload)}")
+
+        prev_button = st.button("Previous")
+        if prev_button:
+            if st.session_state.eff_image_index > 0:
+                st.session_state.eff_image_index -= 1
+
+        next_button = st.button("Next")
+        if next_button:
+            if st.session_state.eff_image_index < len(paper_efficacy_upload) - 1:
+                st.session_state.eff_image_index += 1
+    
+    elif len(paper_efficacy_upload) == 1:
+        current_image_file = paper_efficacy_upload[st.session_state.eff_image_index]
+        current_image = Image.open(current_image_file)
+        col1.write("Original Table :camera:")
+        col1.image(current_image)
+    
+    saved_df = pd.read_excel(diaplay_efficacy_excel_name, sheet_name=None)  # 모든 시트 읽기
+    sheet_name = list(saved_df.keys())[0]  # 첫 번째 시트 이름
+
+    col2.write("Suggested Excel File :wrench:")
+    edited_df = col2.data_editor(saved_df[sheet_name], use_container_width=True, height=1000)
+
+
+if 'tox_image_index' not in st.session_state:
+    st.session_state.tox_image_index = 0
+
+if os.path.exists(diaplay_toxicity_excel_name):
+
+    col1.write("Uploaded Toxicity table PNG File :camera:")
+    if len(paper_toxicity_upload) >= 2:
+        current_image_file = paper_toxicity_upload[st.session_state.tox_image_index]
+        current_image = Image.open(current_image_file)
+
+        col1.write("Original Table :camera:")
+        col1.image(current_image, caption=f"Image {st.session_state.tox_image_index + 1} of {len(paper_toxicity_upload)}")
+
+        prev_button = st.button("Previous")
+        if prev_button:
+            if st.session_state.tox_image_index > 0:
+                st.session_state.tox_image_index -= 1
+
+        next_button = st.button("Next")
+        if next_button:
+            if st.session_state.tox_image_index < len(paper_toxicity_upload) - 1:
+                st.session_state.tox_image_index += 1
+    
+    elif len(paper_toxicity_upload) == 1:
+        current_image_file = paper_toxicity_upload[st.session_state.tox_image_index]
+        current_image = Image.open(current_image_file)
+        col1.write("Original Table :camera:")
+        col1.image(current_image)
+    
+    saved_df = pd.read_excel(diaplay_toxicity_excel_name, sheet_name=None)  # 모든 시트 읽기
+    sheet_name = list(saved_df.keys())[0]  # 첫 번째 시트 이름
+
+    col2.write("Suggested Excel File :wrench:")
+    edited_df = col2.data_editor(saved_df[sheet_name], use_container_width=True, height=1000)
