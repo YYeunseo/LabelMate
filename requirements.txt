@@ -1,9 +1,7 @@
-streamlit
-Pillow
-openai
-pandas
-pdfplumber
-langchain
-langchain-community
-PyMuPDF
-openpyxl
+streamlit==1.17.0
+Pillow==9.3.0
+openai==0.27.0
+pandas==1.5.3
+pdfplumber==0.7.7
+langchain==0.0.199
+PyMuPDF==1.21.0
