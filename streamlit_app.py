@@ -15,7 +15,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 import base64
 import fitz
 
-os.environ["OPENAI_API_KEY"] = "sk-6TQscMHsiBmTWsRI2dx_i5hgyRBbTBuiz9aGhsob4YT3BlbkFJ0uUOL3d5MN0pSwezfVM7td6BV9wVPH_TpkICDjuHsA"
+os.environ["OPENAI_API_KEY"] = "api"
 st.set_page_config(layout="wide", page_title="Easy Label")
 
 st.write("## Clinical dataset LabelMate")
