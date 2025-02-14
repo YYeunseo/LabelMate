@@ -4,4 +4,6 @@ openai
 pandas
 pdfplumber
 langchain
+langchain-community
 PyMuPDF
+
