@@ -1,6 +1,6 @@
 streamlit
 Pillow
-openai
+openai == 1.61.1
 pandas
 pdfplumber
 langchain
