@@ -15,7 +15,8 @@ from langchain_community.document_loaders import PyMuPDFLoader
 import base64
 import fitz
 
-os.environ["OPENAI_API_KEY"] = "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"
+#os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = "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"
 
 st.set_page_config(layout="wide", page_title="Temp")
 
